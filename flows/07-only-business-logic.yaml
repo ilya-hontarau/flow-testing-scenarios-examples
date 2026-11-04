@@ -1,0 +1,72 @@
+blocks:
+  - name: Notifications
+    type:
+      coreBlock: spacelift
+      kind: notifications
+    position: [0, 0]
+  - name: Is Error
+    type:
+      coreBlock: condition
+    position: [0, 150]
+    inputs:
+      default:
+        links:
+          - block: Notifications
+            output: notifications
+        config:
+          condition: !expr 'outputs.notifications.severity === "ERROR"'
+  - name: Pick Stack
+    type:
+      coreBlock: transform
+    position: [0, 300]
+    inputs:
+      default:
+        links:
+          - block: Is Error
+            output: then
+    outputs:
+      default:
+        outputCustomization: !expr '({ stackId: outputs.notifications.stackId ?? "default-stack", reason: outputs.notifications.title })'
+  - name: Trigger Run
+    type:
+      coreBlock: spacelift
+      kind: triggerRun
+    position: [0, 450]
+    inputs:
+      trigger:
+        links:
+          - block: Pick Stack
+            output: default
+        config:
+          stackId: !expr 'outputs.pickStack.stackId'
+testScenarios:
+  - name: only the transform
+    description: "Expected: Passed. Event trigger straight into Pick Stack's input; Notifications and Is Error are never reached; Trigger Run is skipped."
+    triggers:
+      - block: Pick Stack
+        input: default
+        body:
+          notifications: { severity: ERROR, title: Policy failed, stackId: payments }
+    mocks:
+      Trigger Run: []
+    assertions:
+      - block: Pick Stack
+        kind: output
+        output: default
+        expr: !expr 'output.stackId === "payments" && output.reason === "Policy failed"'
+      - block: Trigger Run
+        kind: input
+        expr: !expr 'input.stackId === "payments"'
+  - name: fallback stack
+    description: "Expected: Passed. The notification has no stackId, so the transform falls back to default-stack."
+    triggers:
+      - block: Pick Stack
+        input: default
+        body:
+          notifications: { severity: ERROR, title: Drift detected }
+    mocks:
+      Trigger Run: []
+    assertions:
+      - block: Trigger Run
+        kind: input
+        expr: !expr 'input.stackId === "default-stack"'

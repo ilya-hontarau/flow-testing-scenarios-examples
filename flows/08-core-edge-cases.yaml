@@ -1,0 +1,190 @@
+blocks:
+  - name: Start
+    type:
+      coreBlock: transform
+    position: [0, 0]
+    outputs:
+      default:
+        outputCustomization: !expr '({ items: ["papaya", "bacon", "avocado"] })'
+  - name: Split
+    type:
+      coreBlock: explode
+    position: [0, 150]
+    inputs:
+      default:
+        links:
+          - block: Start
+            output: default
+        config:
+          items: !expr 'outputs.start.items'
+          emittedLimit: 100
+  - name: Gather
+    type:
+      coreBlock: collect
+    position: [0, 300]
+    inputs:
+      default:
+        links:
+          - block: Split
+            output: default
+        config:
+          group: !expr 'outputs.split.groupKey'
+          count: !expr 'outputs.split.count'
+  - name: Processing
+    type:
+      coreBlock: group
+    position: [400, 0]
+    inputs:
+      default-input:
+        name: default-input
+        links:
+          - block: Gather
+            output: default
+    outputs:
+      output-1:
+        name: output-1
+        links:
+          - block: Grouped Transform
+            output: default
+  - name: Grouped Transform
+    type:
+      coreBlock: transform
+    group: Processing
+    inputs:
+      default:
+        links:
+          - block: Processing
+            output: default-input
+    outputs:
+      default:
+        outputCustomization: !expr '({ count: outputs.gather.items.length })'
+  - name: Remember
+    type:
+      coreBlock: memoryGet
+    position: [800, 0]
+    inputs:
+      default:
+        config:
+          key: last-run
+          collection: scenario-edge-cases
+  - name: Uses Secret
+    type:
+      coreBlock: transform
+    position: [800, 150]
+    outputs:
+      default:
+        outputCustomization: !expr '({ secretLength: String(secrets.SCENARIO_TEST_SECRET ?? "").length, secret: secrets.SCENARIO_TEST_SECRET })'
+  - name: Error Handler
+    type:
+      coreBlock: handleError
+    position: [1200, 150]
+  - name: Broken Request
+    type:
+      coreBlock: httpRequest
+    errorHandler: Error Handler
+    position: [1200, 0]
+    inputs:
+      default:
+        config:
+          url: !expr "'https://does-not-exist.invalid'"
+          method: GET
+  - name: After Error
+    type:
+      coreBlock: transform
+    position: [1200, 300]
+    inputs:
+      default:
+        links:
+          - block: Error Handler
+            output: default
+    outputs:
+      default:
+        outputCustomization: !expr '({ handled: true })'
+testScenarios:
+  - name: explode and collect
+    description: "Expected: Passed. Explode emits 3 events, the live Collect gathers all 3."
+    triggers:
+      - block: Start
+        input: default
+        body: {}
+    assertions:
+      - block: Split
+        kind: output
+        output: default
+      - block: Gather
+        kind: output
+        output: default
+        expr: !expr 'output.items.length === 3'
+  - name: block inside a group
+    description: "Expected: Passed. A block inside a group can be mocked and asserted; the group itself can't be picked as trigger, mock or assertion target (check in the UI)."
+    triggers:
+      - block: Start
+        input: default
+        body: {}
+    mocks:
+      Grouped Transform:
+        - output: default
+          body: { count: 42 }
+    assertions:
+      - block: Grouped Transform
+        kind: output
+        output: default
+        expr: !expr 'output.count === 42'
+  - name: memory starts empty
+    description: "Before running: send an event to a memorySet (or set key last-run in collection scenario-edge-cases) in the SOURCE flow. Expected: the copy's memory is empty, so Remember reports a miss; check its output in Open copy."
+    triggers:
+      - block: Remember
+        input: default
+        body: {}
+    assertions:
+      - block: Remember
+        kind: output
+        output: default
+  - name: secret in expressions
+    description: "Before running: create a project secret SCENARIO_TEST_SECRET = hello. Expected: Passed; assertions see the real (unredacted) value, but the event in Open copy shows it redacted."
+    triggers:
+      - block: Uses Secret
+        input: default
+        body: {}
+    assertions:
+      - block: Uses Secret
+        kind: output
+        output: default
+        expr: !expr 'output.secretLength === 5 && output.secret === "hello"'
+  - name: handled error still fails the run
+    description: "Broken Request fails and its error handler takes over. Expected per code: Failed with block \"Broken Request\" failed, even though the error was handled. Decide if that's the wanted behaviour."
+    triggers:
+      - block: Broken Request
+        input: default
+        body: {}
+    assertions:
+      - block: After Error
+        kind: output
+        output: default
+        expr: !expr 'output.handled === true'
+  - name: mock the failing block
+    description: "Expected: Passed. Mocking Broken Request replaces the real failing call, so the error handler is never reached."
+    triggers:
+      - block: Broken Request
+        input: default
+        body: {}
+    mocks:
+      Broken Request:
+        - output: default
+          body: { status: 200 }
+    assertions:
+      - block: Broken Request
+        kind: output
+        output: default
+        expr: !expr 'output.status === 200'
+  - name: assertion must hold for every event
+    description: "Expected: Failed. Explode emits papaya, bacon, avocado; the assertion passes for papaya then fails on bacon (a pass can turn into a fail)."
+    triggers:
+      - block: Start
+        input: default
+        body: {}
+    assertions:
+      - block: Split
+        kind: output
+        output: default
+        expr: !expr 'output.item === "papaya"'

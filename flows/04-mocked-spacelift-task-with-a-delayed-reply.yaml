@@ -1,0 +1,165 @@
+appInstallations:
+  slack:
+    appName: Slack
+    appVersion: 0.2.2
+blocks:
+  - name: Mentions
+    type:
+      appBlock:
+        block: appMentionSubscription
+        appInstallation: slack
+    position: [0, 0]
+  - name: Is Deploy Command
+    type:
+      coreBlock: condition
+    position: [0, 150]
+    inputs:
+      default:
+        links:
+          - block: Mentions
+            output: default
+        config:
+          condition: !expr 'outputs.mentions.text.includes("deploy")'
+  - name: Trigger Task
+    type:
+      coreBlock: spacelift
+      kind: triggerTask
+    position: [0, 300]
+    inputs:
+      trigger:
+        links:
+          - block: Is Deploy Command
+            output: then
+        config:
+          stackId: !expr '"REPLACE-WITH-STACK-ID"'
+          command: !expr '"echo deploy"'
+  - name: Summarize
+    type:
+      coreBlock: transform
+    position: [0, 450]
+    inputs:
+      default:
+        links:
+          - block: Trigger Task
+            output: completed
+    outputs:
+      default:
+        outputCustomization: !expr '({ text: `Task ${outputs.triggerTask.runId} finished: ${outputs.triggerTask.state}` })'
+  - name: Send Slack Message
+    type:
+      appBlock:
+        block: sendTextMessage
+        appInstallation: slack
+    position: [0, 600]
+    inputs:
+      default:
+        links:
+          - block: Summarize
+            output: default
+        config:
+          channelId: !expr 'outputs.mentions.channel'
+          text: !expr 'outputs.summarize.text'
+testScenarios:
+  - name: deploy finished
+    description: "Expected: Passed ~5s after start (the completed reply is delayed 5000 ms). The mock echoes the command it was called with."
+    triggers:
+      - block: Mentions
+        output: default
+        body:
+          channel: C123
+          user: U1
+          text: "<@BOT> deploy"
+    mocks:
+      Trigger Task:
+        - output: started
+          body: { runId: R1, state: QUEUED }
+        - output: completed
+          delayMs: 5000
+          body: !expr '({ runId: "R1", state: "FINISHED", command: input.command })'
+      Send Slack Message: []
+    assertions:
+      - block: Trigger Task
+        kind: input
+        expr: !expr 'input.command === "echo deploy"'
+      - block: Trigger Task
+        kind: output
+        output: completed
+        expr: !expr 'output.command === "echo deploy"'
+      - block: Send Slack Message
+        kind: input
+        expr: !expr 'input.channelId === "C123" && input.text === "Task R1 finished: FINISHED"'
+  - name: deploy failed
+    description: "Expected: Passed ~5s after start; the message reports FAILED."
+    triggers:
+      - block: Mentions
+        output: default
+        body:
+          channel: C123
+          user: U1
+          text: "<@BOT> deploy"
+    mocks:
+      Trigger Task:
+        - output: completed
+          delayMs: 5000
+          body: { runId: R2, state: FAILED }
+      Send Slack Message: []
+    assertions:
+      - block: Send Slack Message
+        kind: input
+        expr: !expr 'input.text === "Task R2 finished: FAILED"'
+  - name: not a deploy command
+    description: "Expected: Passed after the 5 min timeout; nothing past the condition is reached."
+    triggers:
+      - block: Mentions
+        output: default
+        body:
+          channel: C123
+          user: U1
+          text: "<@BOT> hello"
+    mocks:
+      Trigger Task:
+        - output: completed
+          body: { runId: R3, state: FINISHED }
+      Send Slack Message: []
+    assertions:
+      - block: Is Deploy Command
+        kind: input
+      - block: Trigger Task
+        kind: noEvents
+      - block: Send Slack Message
+        kind: noEvents
+  - name: mock body throws
+    description: "Expected: Failed with block \"Trigger Task\" failed; the mock's body expression throws."
+    triggers:
+      - block: Mentions
+        output: default
+        body:
+          channel: C123
+          user: U1
+          text: "<@BOT> deploy"
+    mocks:
+      Trigger Task:
+        - output: completed
+          body: !expr 'input.missing.field'
+      Send Slack Message: []
+    assertions:
+      - block: Send Slack Message
+        kind: input
+  - name: live spacelift task
+    description: "Needs a linked Spacelift account and a real stack ID in Trigger Task. Expected: Passed once the real task finishes; a task shows up in Spacelift as started by Flows. Without a linked account: Failed, the Trigger Task input assertion says no Spacelift account is linked."
+    triggers:
+      - block: Mentions
+        output: default
+        body:
+          channel: C123
+          user: U1
+          text: "<@BOT> deploy"
+    mocks:
+      Send Slack Message: []
+    assertions:
+      - block: Trigger Task
+        kind: input
+      - block: Summarize
+        kind: output
+        output: default
+        expr: !expr 'output.text.includes("FINISHED")'

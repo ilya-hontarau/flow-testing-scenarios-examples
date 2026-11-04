@@ -1,0 +1,143 @@
+blocks:
+  - name: Endpoint A
+    type:
+      coreBlock: httpEndpoint
+    position: [-200, 0]
+    config:
+      path: /scenario-collect-a
+      methods:
+        - POST
+      audience: world
+  - name: Endpoint B
+    type:
+      coreBlock: httpEndpoint
+    position: [200, 0]
+    config:
+      path: /scenario-collect-b
+      methods:
+        - POST
+      audience: world
+  - name: Collect Both
+    type:
+      coreBlock: collect
+    position: [0, 150]
+    inputs:
+      default:
+        links:
+          - block: Endpoint A
+            output: requests
+          - block: Endpoint B
+            output: requests
+        config:
+          group: !expr '"all"'
+          count: !expr '2'
+  - name: Summarize
+    type:
+      coreBlock: transform
+    position: [0, 300]
+    inputs:
+      default:
+        links:
+          - block: Collect Both
+            output: default
+    outputs:
+      default:
+        outputCustomization: !expr |
+          (() => {
+            const names = outputs.collectBoth.items.map(item => (item.endpointA ?? item.endpointB).body.name);
+            return { ordered: names.join(","), sorted: [...names].sort().join(",") };
+          })()
+  - name: Send Message
+    type:
+      coreBlock: httpRequest
+    position: [0, 450]
+    inputs:
+      default:
+        links:
+          - block: Summarize
+            output: default
+        config:
+          url: !expr "'https://httpbin.org/post'"
+          method: POST
+          body: !expr '({ text: outputs.summarize.sorted, ordered: outputs.summarize.ordered })'
+testScenarios:
+  - name: two entry points
+    description: "Expected: Passed. Both endpoints emit, the live Collect emits once with both items."
+    triggers:
+      - block: Endpoint A
+        output: requests
+        body: { method: POST, body: { name: alpha } }
+      - block: Endpoint B
+        output: requests
+        body: { method: POST, body: { name: beta } }
+    mocks:
+      Send Message: []
+    assertions:
+      - block: Collect Both
+        kind: output
+        output: default
+        expr: !expr 'output.items.length === 2'
+      - block: Send Message
+        kind: input
+        expr: !expr 'input.body.text === "alpha,beta"'
+  - name: same block twice
+    description: "Expected: Passed. Two emits on the same endpoint with delay 0; ordering should be deterministic (first, second). Run it several times; a flaky result means ordering isn't deterministic."
+    triggers:
+      - block: Endpoint A
+        output: requests
+        body: { method: POST, body: { name: first } }
+      - block: Endpoint A
+        output: requests
+        body: { method: POST, body: { name: second } }
+    mocks:
+      Send Message: []
+    assertions:
+      - block: Send Message
+        kind: input
+        expr: !expr 'input.body.ordered === "first,second"'
+  - name: only one arrives
+    description: "Expected: Failed after the 5 min timeout; Collect waits for a second item, so Send Message is never reached."
+    triggers:
+      - block: Endpoint A
+        output: requests
+        body: { method: POST, body: { name: lonely } }
+    mocks:
+      Send Message: []
+    assertions:
+      - block: Send Message
+        kind: input
+  - name: three events, count two
+    description: "Expected: Passed. Collect emits one batch of two; the third item waits in the copy."
+    triggers:
+      - block: Endpoint A
+        output: requests
+        body: { method: POST, body: { name: one } }
+      - block: Endpoint B
+        output: requests
+        delayMs: 1000
+        body: { method: POST, body: { name: two } }
+      - block: Endpoint A
+        output: requests
+        delayMs: 2000
+        body: { method: POST, body: { name: three } }
+    mocks:
+      Send Message: []
+    assertions:
+      - block: Collect Both
+        kind: output
+        output: default
+        expr: !expr 'output.items.length === 2'
+  - name: wrong http method
+    description: "Expected: Failed; the endpoint only allows POST, the trigger uses GET."
+    triggers:
+      - block: Endpoint A
+        output: requests
+        body: { method: GET, body: { name: x } }
+      - block: Endpoint B
+        output: requests
+        body: { method: POST, body: { name: y } }
+    mocks:
+      Send Message: []
+    assertions:
+      - block: Send Message
+        kind: input

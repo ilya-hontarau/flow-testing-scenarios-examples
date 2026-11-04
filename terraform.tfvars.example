@@ -1,0 +1,4 @@
+project_name          = "flows testing"
+slack_installation_id = "01a1a758-da75-7887-a9c8-3336d27b0e19"
+spacelift_stack_id  = "my-stack"
+flows_endpoint      = "flows-demo.com"

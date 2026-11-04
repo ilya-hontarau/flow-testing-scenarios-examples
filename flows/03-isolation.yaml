@@ -1,0 +1,43 @@
+dataTables:
+  ticks:
+    schema:
+      columns:
+        - name: source
+          type: string
+blocks:
+  - name: Every Minute
+    type:
+      coreBlock: schedule
+    position: [0, 0]
+    config:
+      definition:
+        type: frequency
+        frequency:
+          interval: 1
+          unit: minutes
+  - name: Record Tick
+    type:
+      coreBlock: dataTableCreateRow
+    position: [0, 150]
+    config:
+      table: ticks
+    inputs:
+      default:
+        links:
+          - block: Every Minute
+            output: default
+        config:
+          row: !expr '({ source: outputs.everyMinute.source ?? "real tick" })'
+testScenarios:
+  - name: tick from scenario
+    description: "Expected: Passed. The copy's ticks table gets exactly one 'scenario' row and no more; the source table only gets 'real tick' rows."
+    triggers:
+      - block: Every Minute
+        output: default
+        body:
+          source: scenario
+    assertions:
+      - block: Record Tick
+        kind: output
+        output: default
+        expr: !expr 'output.row.source === "scenario"'

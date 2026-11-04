@@ -1,0 +1,104 @@
+blocks:
+  - name: Run Events
+    type:
+      coreBlock: spacelift
+      kind: runEvents
+    position: [0, 0]
+    config:
+      stackId: !expr '"REPLACE-WITH-STACK-ID"'
+      states:
+        - FAILED
+  - name: Is Failed Run
+    type:
+      coreBlock: condition
+    position: [0, 150]
+    inputs:
+      default:
+        links:
+          - block: Run Events
+            output: runs
+        config:
+          condition: !expr 'outputs.runEvents.state === "FAILED"'
+  - name: Retry Run
+    type:
+      coreBlock: spacelift
+      kind: triggerRun
+    position: [0, 300]
+    inputs:
+      trigger:
+        links:
+          - block: Is Failed Run
+            output: then
+        config:
+          stackId: !expr 'outputs.runEvents.stackId'
+          runType: !expr '"PROPOSED"'
+  - name: Send Message
+    type:
+      coreBlock: httpRequest
+    position: [0, 450]
+    inputs:
+      default:
+        links:
+          - block: Retry Run
+            output: started
+        config:
+          url: !expr "'https://httpbin.org/post'"
+          method: POST
+          body: !expr '({ text: `Retried ${outputs.runEvents.runId} as ${outputs.retryRun.runId}` })'
+testScenarios:
+  - name: failed run is retried live
+    description: "Needs a linked Spacelift account and a real stack ID. Expected: Passed; a real PROPOSED run starts in Spacelift, shown as started by Flows."
+    triggers:
+      - block: Run Events
+        output: runs
+        body: { runId: 01FAKERUN, stackId: REPLACE-WITH-STACK-ID, type: TRACKED, state: FAILED }
+    mocks:
+      Send Message: []
+    assertions:
+      - block: Retry Run
+        kind: output
+        output: started
+      - block: Send Message
+        kind: input
+        expr: !expr 'input.body.text.startsWith("Retried 01FAKERUN as ")'
+  - name: failed run, retry mocked
+    description: "Expected: Passed in seconds; no run is created in Spacelift."
+    triggers:
+      - block: Run Events
+        output: runs
+        body: { runId: 01FAKERUN, stackId: REPLACE-WITH-STACK-ID, type: TRACKED, state: FAILED }
+    mocks:
+      Retry Run:
+        - output: started
+          body: !expr '({ runId: "01RETRY", stackId: input.stackId })'
+      Send Message: []
+    assertions:
+      - block: Send Message
+        kind: input
+        expr: !expr 'input.body.text === "Retried 01FAKERUN as 01RETRY"'
+  - name: finished run is ignored
+    description: "Expected: Passed after the 5 min timeout. Note the emit bypasses the block's states filter (FAILED only); only the condition stops it."
+    triggers:
+      - block: Run Events
+        output: runs
+        body: { runId: 01FAKERUN, stackId: REPLACE-WITH-STACK-ID, type: TRACKED, state: FINISHED }
+    mocks:
+      Retry Run: []
+      Send Message: []
+    assertions:
+      - block: Is Failed Run
+        kind: input
+      - block: Retry Run
+        kind: noEvents
+  - name: body not matching the output schema
+    description: "The design doc says the emit body is checked against the output schema; the code doesn't validate it. Expected per design: rejected. Likely today: accepted, Is Failed Run sees state undefined."
+    triggers:
+      - block: Run Events
+        output: runs
+        body: { unexpected: true }
+    mocks:
+      Retry Run: []
+      Send Message: []
+    assertions:
+      - block: Is Failed Run
+        kind: input

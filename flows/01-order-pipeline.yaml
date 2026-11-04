@@ -1,0 +1,262 @@
+blocks:
+  - name: Orders Webhook
+    type:
+      coreBlock: httpEndpoint
+    position: [0, 0]
+    config:
+      path: /scenario-orders
+      methods:
+        - POST
+      audience: world
+    inputs:
+      default:
+        config:
+          statusCode: 200
+  - name: Validate
+    type:
+      coreBlock: transform
+    position: [0, 150]
+    inputs:
+      default:
+        links:
+          - block: Orders Webhook
+            output: requests
+    outputs:
+      default:
+        outputCustomization: !expr '({ id: outputs.ordersWebhook.body.id, amount: Number(outputs.ordersWebhook.body.amount) })'
+  - name: Is Big Order
+    type:
+      coreBlock: condition
+    position: [0, 300]
+    inputs:
+      default:
+        links:
+          - block: Validate
+            output: default
+        config:
+          condition: !expr 'outputs.validate.amount > 100'
+  - name: Big Order
+    type:
+      coreBlock: transform
+    position: [-200, 450]
+    inputs:
+      default:
+        links:
+          - block: Is Big Order
+            output: then
+    outputs:
+      default:
+        outputCustomization: !expr '({ id: outputs.validate.id, tier: "big" })'
+  - name: Normal Order
+    type:
+      coreBlock: transform
+    position: [200, 450]
+    inputs:
+      default:
+        links:
+          - block: Is Big Order
+            output: else
+    outputs:
+      default:
+        outputCustomization: !expr '({ id: outputs.validate.id, tier: "normal" })'
+  - name: Error Handler
+    type:
+      coreBlock: handleError
+    position: [400, 600]
+  - name: Notify
+    type:
+      coreBlock: httpRequest
+    errorHandler: Error Handler
+    position: [0, 600]
+    inputs:
+      default:
+        links:
+          - block: Big Order
+            output: default
+          - block: Normal Order
+            output: default
+        config:
+          url: !expr "'https://httpbin.org/post'"
+          method: POST
+          body: !expr '({ id: outputs.validate.id, amount: outputs.validate.amount })'
+    outputs:
+      default:
+        outputCustomization: !expr '({ status: raw.status })'
+  - name: Audit
+    type:
+      coreBlock: transform
+    position: [0, 750]
+    inputs:
+      default:
+        links:
+          - block: Notify
+            output: default
+    outputs:
+      default:
+        outputCustomization: !expr '({ notified: true, id: outputs.validate.id, status: outputs.notify.status })'
+testScenarios:
+  - name: big order
+    description: "Expected: Passed within seconds. Emit trigger on the HTTP endpoint, Notify mocked."
+    triggers:
+      - block: Orders Webhook
+        output: requests
+        body:
+          method: POST
+          body:
+            id: o-1
+            amount: 250
+    mocks:
+      Notify:
+        - output: default
+          body:
+            status: 200
+    assertions:
+      - block: Big Order
+        kind: output
+        output: default
+        expr: !expr 'output.tier === "big" && output.id === "o-1"'
+      - block: Audit
+        kind: output
+        output: default
+        expr: !expr 'output.status === 200'
+  - name: small order
+    description: "Expected: Passed within seconds. Event trigger straight into Validate's input, Notify mocked."
+    triggers:
+      - block: Validate
+        input: default
+        body:
+          ordersWebhook:
+            body:
+              id: o-2
+              amount: 40
+    mocks:
+      Notify:
+        - output: default
+          body:
+            status: 200
+    assertions:
+      - block: Normal Order
+        kind: output
+        output: default
+        expr: !expr 'output.tier === "normal"'
+      - block: Notify
+        kind: input
+        expr: !expr 'input.body.amount === 40'
+  - name: mocked notify with match
+    description: "Expected: Passed. Two orders; each mock emit only fires for its own order. The small order's emit comes 3s after Notify is reached."
+    triggers:
+      - block: Orders Webhook
+        output: requests
+        body:
+          method: POST
+          body:
+            id: o-3
+            amount: 500
+      - block: Orders Webhook
+        output: requests
+        delayMs: 2000
+        body:
+          method: POST
+          body:
+            id: o-4
+            amount: 10
+    mocks:
+      Notify:
+        - output: default
+          match: !expr 'input.body.amount > 100'
+          body:
+            status: 201
+        - output: default
+          match: !expr 'input.body.amount <= 100'
+          body:
+            status: 202
+          delayMs: 3000
+    assertions:
+      - block: Audit
+        kind: output
+        output: default
+        expr: !expr 'output.status === (output.id === "o-3" ? 201 : 202)'
+  - name: skipped notify
+    description: "Expected: Passed after the 5 min timeout (noEvents assertions only pass at the timeout). Notify is skipped, so Audit is never reached."
+    triggers:
+      - block: Orders Webhook
+        output: requests
+        body:
+          method: POST
+          body:
+            id: o-5
+            amount: 250
+    mocks:
+      Notify: []
+    assertions:
+      - block: Notify
+        kind: input
+      - block: Audit
+        kind: noEvents
+      - block: Error Handler
+        kind: noEvents
+  - name: live notify
+    description: "Expected: Passed. Nothing is mocked, so Notify really calls httpbin.org."
+    triggers:
+      - block: Orders Webhook
+        output: requests
+        body:
+          method: POST
+          body:
+            id: o-6
+            amount: 120
+    assertions:
+      - block: Audit
+        kind: output
+        output: default
+        expr: !expr 'output.status === 200'
+  - name: wrong expectation
+    description: "Expected: Failed as soon as Big Order emits, with the assertion's failure detail shown."
+    triggers:
+      - block: Orders Webhook
+        output: requests
+        body:
+          method: POST
+          body:
+            id: o-7
+            amount: 250
+    mocks:
+      Notify: []
+    assertions:
+      - block: Big Order
+        kind: output
+        output: default
+        expr: !expr 'output.tier === "normal"'
+  - name: no assertions
+    description: "Expected: Failed right away with \"the test scenario has no assertions, so nothing judged the run\"."
+    triggers:
+      - block: Orders Webhook
+        output: requests
+        body:
+          method: POST
+          body:
+            id: o-8
+            amount: 250
+    mocks:
+      Notify: []
+  - name: bad assertion expressions
+    description: "Expected: Failed. One expression returns a string, the other throws; both show details."
+    triggers:
+      - block: Orders Webhook
+        output: requests
+        body:
+          method: POST
+          body:
+            id: o-9
+            amount: 250
+    mocks:
+      Notify: []
+    assertions:
+      - block: Big Order
+        kind: output
+        output: default
+        expr: !expr '"yes"'
+      - block: Validate
+        kind: output
+        output: default
+        expr: !expr 'output.missing.field === 1'

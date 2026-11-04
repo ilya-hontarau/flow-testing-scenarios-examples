@@ -1,0 +1,112 @@
+blocks:
+  - name: Boom
+    type:
+      coreBlock: transform
+    position: [0, 0]
+    outputs:
+      default:
+        outputCustomization: !expr '(() => { throw new Error("boom") })()'
+  - name: Short Sleep
+    type:
+      coreBlock: sleep
+    position: [300, 0]
+    inputs:
+      default:
+        config:
+          sleep: 30
+  - name: After Short Sleep
+    type:
+      coreBlock: transform
+    position: [300, 150]
+    inputs:
+      default:
+        links:
+          - block: Short Sleep
+            output: default
+    outputs:
+      default:
+        outputCustomization: !expr '({ done: true })'
+  - name: Long Sleep
+    type:
+      coreBlock: sleep
+    position: [600, 0]
+    inputs:
+      default:
+        config:
+          sleep: 600
+  - name: After Long Sleep
+    type:
+      coreBlock: transform
+    position: [600, 150]
+    inputs:
+      default:
+        links:
+          - block: Long Sleep
+            output: default
+    outputs:
+      default:
+        outputCustomization: !expr '({ done: true })'
+testScenarios:
+  - name: block fails
+    description: "Expected: Failed right away with block \"Boom\" failed."
+    triggers:
+      - block: Boom
+        input: default
+        body: {}
+    assertions:
+      - block: Boom
+        kind: input
+  - name: slow (cancel me)
+    description: "Expected: Running for ~30s, then Passed. Use it to test Cancel and editing the scenario mid-run."
+    triggers:
+      - block: Short Sleep
+        input: default
+        body: {}
+    assertions:
+      - block: After Short Sleep
+        kind: output
+        output: default
+        expr: !expr 'output.done === true'
+  - name: times out
+    description: "Expected: Failed after 5 min; the After Long Sleep assertion fails as never reached."
+    triggers:
+      - block: Long Sleep
+        input: default
+        body: {}
+    assertions:
+      - block: After Long Sleep
+        kind: output
+        output: default
+  - name: never emits
+    description: "Expected: Passed after the 5 min timeout; Boom receives no events."
+    triggers:
+      - block: Short Sleep
+        input: default
+        body: {}
+    assertions:
+      - block: After Short Sleep
+        kind: output
+        output: default
+      - block: Boom
+        kind: noEvents
+  - name: delayed trigger
+    description: "Expected: Passed ~20s after start; the trigger fires 20000 ms after the run starts."
+    triggers:
+      - block: After Short Sleep
+        input: default
+        delayMs: 20000
+        body: {}
+    assertions:
+      - block: After Short Sleep
+        kind: output
+        output: default
+  - name: bad trigger body
+    description: "Expected: Failed; the event trigger body is not an object."
+    triggers:
+      - block: After Short Sleep
+        input: default
+        body: !expr '42'
+    assertions:
+      - block: After Short Sleep
+        kind: output
+        output: default

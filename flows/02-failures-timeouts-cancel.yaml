@@ -57,7 +57,7 @@ testScenarios:
       - block: Boom
         kind: input
   - name: slow (cancel me)
-    description: "Expected: Running for ~30s, then Passed. Use it to test Cancel and editing the scenario mid-run."
+    description: "Expected: Running for ~30s (the Sleep keeps the run busy), then Passed. Use it to test Cancel and editing the scenario mid-run."
     triggers:
       - block: Short Sleep
         input: default
@@ -68,7 +68,7 @@ testScenarios:
         output: default
         expr: !expr 'output.done === true'
   - name: times out
-    description: "Expected: Failed after 5 min; the After Long Sleep assertion fails as never reached."
+    description: "Expected: Failed after the 5 min timeout (Long Sleep is 10 min) with \"the run timed out while blocks were still waiting: [sleep]\"; the After Long Sleep assertion fails as never reached."
     triggers:
       - block: Long Sleep
         input: default
@@ -78,7 +78,7 @@ testScenarios:
         kind: output
         output: default
   - name: never emits
-    description: "Expected: Passed after the 5 min timeout; Boom receives no events."
+    description: "Expected: Passed ~30s after start, once After Short Sleep emits and the copy is idle; Boom receives no events."
     triggers:
       - block: Short Sleep
         input: default

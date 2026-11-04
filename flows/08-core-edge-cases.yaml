@@ -151,8 +151,8 @@ testScenarios:
         kind: output
         output: default
         expr: !expr 'output.secretLength === 5 && output.secret === "hello"'
-  - name: handled error still fails the run
-    description: "Broken Request fails and its error handler takes over. Expected per code: Failed with block \"Broken Request\" failed, even though the error was handled. Decide if that's the wanted behaviour."
+  - name: handled error is judged by assertions
+    description: "Broken Request fails and its error handler takes over. Expected: Passed; a failure an error handler takes doesn't fail the run, the error path is checked by the assertion on After Error."
     triggers:
       - block: Broken Request
         input: default

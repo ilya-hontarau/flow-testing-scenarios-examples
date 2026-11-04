@@ -96,7 +96,7 @@ testScenarios:
         kind: input
         expr: !expr 'input.body.ordered === "first,second"'
   - name: only one arrives
-    description: "Expected: Failed after the 5 min timeout; Collect waits for a second item, so Send Message is never reached."
+    description: "Expected: Failed after the 5 min timeout; Collect (count 2, no delay) waits for a second item, so the Send Message assertion is never reached. The copy is idle early, but a pending input assertion still waits for the timeout."
     triggers:
       - block: Endpoint A
         output: requests

@@ -108,7 +108,7 @@ testScenarios:
         kind: input
         expr: !expr 'input.text === "Task R2 finished: FAILED"'
   - name: not a deploy command
-    description: "Expected: Passed after the 5 min timeout; nothing past the condition is reached."
+    description: "Expected: Passed within seconds; nothing past the condition is reached, so the noEvents assertion passes once the copy is idle."
     triggers:
       - block: Mentions
         output: default

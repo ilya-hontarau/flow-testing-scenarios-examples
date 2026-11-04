@@ -177,7 +177,7 @@ testScenarios:
         output: default
         expr: !expr 'output.status === (output.id === "o-3" ? 201 : 202)'
   - name: skipped notify
-    description: "Expected: Passed after the 5 min timeout (noEvents assertions only pass at the timeout). Notify is skipped, so Audit is never reached."
+    description: "Expected: Passed within seconds. Notify is skipped, so Audit is never reached; the pending noEvents assertions pass as soon as the copy is idle."
     triggers:
       - block: Orders Webhook
         output: requests

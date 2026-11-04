@@ -77,7 +77,7 @@ testScenarios:
         kind: input
         expr: !expr 'input.body.text === "Retried 01FAKERUN as 01RETRY"'
   - name: finished run is ignored
-    description: "Expected: Passed after the 5 min timeout. Note the emit bypasses the block's states filter (FAILED only); only the condition stops it."
+    description: "Expected: Passed within seconds; the noEvents assertion passes once the copy is idle. Note the emit bypasses the block's states filter (FAILED only); only the condition stops it."
     triggers:
       - block: Run Events
         output: runs

@@ -141,7 +141,7 @@ testScenarios:
         expr: !expr 'output.tier === "normal"'
       - block: Notify
         kind: input
-        expr: !expr 'input.body.amount === 40'
+        expr: !expr 'event.id === "o-2" && event.tier === "normal"'
   - name: mocked notify with match
     description: "Expected: Passed. Two orders; each mock emit only fires for its own order. The small order's emit comes 3s after Notify is reached."
     triggers:
@@ -163,11 +163,11 @@ testScenarios:
     mocks:
       Notify:
         - output: default
-          match: !expr 'input.body.amount > 100'
+          match: !expr 'event.tier === "big"'
           body:
             status: 201
         - output: default
-          match: !expr 'input.body.amount <= 100'
+          match: !expr 'event.tier === "normal"'
           body:
             status: 202
           delayMs: 3000

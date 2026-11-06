@@ -79,7 +79,7 @@ testScenarios:
         expr: !expr 'output.items.length === 2'
       - block: Send Message
         kind: input
-        expr: !expr 'input.body.text === "alpha,beta"'
+        expr: !expr 'event.sorted === "alpha,beta"'
   - name: same block twice
     description: "Expected: Passed. Two emits on the same endpoint with delay 0; ordering should be deterministic (first, second). Run it several times; a flaky result means ordering isn't deterministic."
     triggers:
@@ -94,7 +94,7 @@ testScenarios:
     assertions:
       - block: Send Message
         kind: input
-        expr: !expr 'input.body.ordered === "first,second"'
+        expr: !expr 'event.ordered === "first,second"'
   - name: only one arrives
     description: "Expected: Failed after the 5 min timeout; Collect (count 2, no delay) waits for a second item, so the Send Message assertion is never reached. The copy is idle early, but a pending input assertion still waits for the timeout."
     triggers:

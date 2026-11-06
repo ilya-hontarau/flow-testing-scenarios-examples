@@ -60,7 +60,7 @@ testScenarios:
         output: started
       - block: Send Message
         kind: input
-        expr: !expr 'input.body.text.startsWith("Retried 01FAKERUN as ")'
+        expr: !expr 'typeof event.runId === "string" && event.runId !== "01FAKERUN"'
   - name: failed run, retry mocked
     description: "Expected: Passed in seconds; no run is created in Spacelift."
     triggers:
@@ -75,7 +75,7 @@ testScenarios:
     assertions:
       - block: Send Message
         kind: input
-        expr: !expr 'input.body.text === "Retried 01FAKERUN as 01RETRY"'
+        expr: !expr 'event.runId === "01RETRY"'
   - name: finished run is ignored
     description: "Expected: Passed within seconds; the noEvents assertion passes once the copy is idle. Note the emit bypasses the block's states filter (FAILED only); only the condition stops it."
     triggers:
